@@ -4,31 +4,51 @@ REPO_OWNER="DoL-Lyra"
 REPO_NAME="Lyra"
 PATTERN="besc-hikari-ucb"
 
-# 使用原始JSON输出格式
-LATEST_RELEASE=$(curl -sL -H "Accept: application/vnd.github.v3.raw" \
-  https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest)
+# 使用GitHub Token认证（自动注入）
+curl_auth_header=""
+if [ -n "$GIT_TOKEN" ]; then
+  curl_auth_header="-H Authorization: Bearer $GIT_TOKEN"
+fi
 
-# 修复jq过滤器语法
+# 获取原始JSON并清理控制字符
+LATEST_RELEASE=$(curl -sL $curl_auth_header \
+  -H "Accept: application/vnd.github.v3+json" \
+  https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest | \
+  tr -cd '\11\12\15\40-\176')
+
+# 保存原始响应用于调试
+echo "$LATEST_RELEASE" > raw_response.json
+
+# 精确匹配逻辑
 ASSET_URL=$(echo "$LATEST_RELEASE" | jq -r \
-  ".assets[] | select( (.name | contains(\"$PATTERN\")) and (.name | endswith(\".zip\")) ) | .browser_download_url")
+  ".assets[] | select(.name | test(\"${PATTERN}.*\\.zip\$\"; \"i\")) | .browser_download_url")
 
-# 增强调试输出
-echo "Debug - RAW JSON Response:"
-echo "$LATEST_RELEASE" | head -c 500  # 显示部分响应内容用于诊断
+# 调试输出
+echo "Debug - Found asset URL: $ASSET_URL"
+echo "Debug - Full assets list:"
+echo "$LATEST_RELEASE" | jq -r '.assets[].name'
 
-if [ -z "$ASSET_URL" ]; then
-  echo "Error: No matching zip asset found. Available assets:"
-  echo "$LATEST_RELEASE" | jq -r ".assets[].name" 2>/dev/null || echo "Failed to parse assets"
+if [ -z "$ASSET_URL" ] || [ "$ASSET_URL" = "null" ]; then
+  echo "Error: Target asset not found"
   exit 1
 fi
 
-# 下载并解压（增加重试机制）
-wget --retry-connrefused --waitretry=30 --read-timeout=30 --timeout=30 -t 3 $ASSET_URL -O build.zip
-unzip -o build.zip -d content
+# 下载并处理（使用临时目录）
+mkdir -p content
+wget --show-progress -O build.zip "$ASSET_URL"
+unzip -o build.zip -d content_temp
+mv content_temp/* content/
+rm -rf content_temp
 
-# 特殊字符处理验证
-if [ ! -f "content/Degrees of Lewdity.html" ] || [ ! -d "content/img" ]; then
-  echo "Error: Required files missing after extraction. Found:"
-  find content -type f -print
+# 验证文件存在性（处理空格）
+if [ ! -f "content/Degrees of Lewdity.html" ]; then
+  echo "Error: HTML file missing. Content list:"
+  find content -maxdepth 1 -type f
+  exit 1
+fi
+
+if [ ! -d "content/img" ]; then
+  echo "Error: img directory missing. Content list:"
+  find content -maxdepth 1 -type d
   exit 1
 fi
