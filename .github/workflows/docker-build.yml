@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -15,15 +19,20 @@ jobs:
       - name: Setup environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq tree  # 添加tree用于调试
+          sudo apt-get install -y jq tree unzip
+          echo "JQ version: $(jq --version)"
 
       - name: Prepare content
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
           chmod +x download_and_prepare.sh
-          ./download_and_prepare.sh
-        env:
-          # 防止wget输出截断
-          WGETRC: /dev/null
+          ./download_and_prepare.sh || { 
+            echo "##[error]Preparation failed";
+            cat raw_response.json;
+            exit 1;
+          }
+          tree content
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
