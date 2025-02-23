@@ -2,7 +2,7 @@
 
 REPO_OWNER="DoL-Lyra"
 REPO_NAME="Lyra"
-PATTERN="besc-hikari-ucb"
+PATTERN="besc-cheat-csd-hikari-ucb"
 
 # 使用GitHub Token认证（自动注入）
 curl_auth_header=""
